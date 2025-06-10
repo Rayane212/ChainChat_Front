@@ -106,7 +106,7 @@ export function DashboardPage() {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
-          <img src="/image.png" alt="ChainChat" className="h-16 w-16 mx-auto mb-4" />
+          <img src="/image.png\" alt="ChainChat\" className="h-16 w-16 mx-auto mb-4" />
           <p className="text-muted-foreground">Chargement...</p>
         </div>
       </div>
