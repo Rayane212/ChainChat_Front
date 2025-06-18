@@ -13,6 +13,8 @@ import {
   X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Sidebar } from '@/components/chat';
+
 
 export default function MainLayout() {
   const location = useLocation();
@@ -54,11 +56,7 @@ export default function MainLayout() {
     <div className="h-screen bg-background flex overflow-hidden">
       {/* Desktop Sidebar - 320px fixed width */}
       <div className="hidden lg:flex lg:w-80 lg:flex-col bg-surface border-r border-border">
-        <SidebarContent 
-          sidebarItems={sidebarItems}
-          isActive={isActive}
-          onNavigate={handleNavigation}
-        />
+        <Sidebar/>
       </div>
 
      

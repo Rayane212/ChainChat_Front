@@ -4,6 +4,7 @@ import WelcomePage from './pages/WelcomePage';
 import AuthPage from './pages/AuthPage';
 import ChatDashboard from './pages/ChatDashboard';
 import ContactsPage from './pages/ContactsPage';
+import { ContactList } from '@/components/chat';
 import SettingsPage from './pages/SettingsPage';
 import ConversationPage from './pages/ConversationPage';
 import ComponentShowcase from './pages/ComponentShowcase';
@@ -25,7 +26,7 @@ function App() {
             <Route path="/showcase" element={<ComponentShowcase />} />
             <Route path="/app" element={<MainLayout />}>
               <Route path="chat" element={<ChatDashboard />} />
-              <Route path="contacts" element={<ContactsPage />} />
+              <Route path="contacts" element={<ContactList />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route index element={<Navigate to="chat" replace />} />
             </Route>
