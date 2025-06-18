@@ -6,6 +6,7 @@ import ChatDashboard from './pages/ChatDashboard';
 import ContactsPage from './pages/ContactsPage';
 import SettingsPage from './pages/SettingsPage';
 import ConversationPage from './pages/ConversationPage';
+import ComponentShowcase from './pages/ComponentShowcase';
 import MainLayout from './components/layout/MainLayout';
 import { Toaster } from '@/components/ui/sonner';
 
@@ -21,6 +22,7 @@ function App() {
             <Route path="/" element={<WelcomePage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/conversation/:contactId" element={<ConversationPage />} />
+            <Route path="/showcase" element={<ComponentShowcase />} />
             <Route path="/app" element={<MainLayout />}>
               <Route path="chat" element={<ChatDashboard />} />
               <Route path="contacts" element={<ContactsPage />} />
