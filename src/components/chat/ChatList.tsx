@@ -28,40 +28,54 @@ export default function ChatList({ chats, selectedId, onSelect }: Props) {
   const others = chats.filter((c) => !c.isPinned)
 
   return (
-    <div className="space-y-2 py-2">
-      {pinned.length > 0 && (
-        <>
-          <p className="px-4 text-xs uppercase text-muted-foreground">Pinned</p>
-          {pinned.map((chat) => (
-            <ChatItem
-            key={chat.id}
-            {...chat}
-            selected={chat.id === selectedId}
-            onClick={() => {
-            onSelect(chat.id)
-            navigate(`/chat/${chat.id}`)
-            }}
-            />          
-        ))}
-        </>
-      )}
+    <div className="h-full overflow-y-auto">
+      <div className="space-y-1 py-2">
+        {pinned.length > 0 && (
+          <div className="mb-4">
+            <p className="px-4 py-2 text-xs font-semibold uppercase text-muted-foreground">
+              Pinned
+            </p>
+            <div className="space-y-1">
+              {pinned.map((chat) => (
+                <div key={chat.id} className="px-2">
+                  <ChatItem
+                    {...chat}
+                    selected={chat.id === selectedId}
+                    onClick={() => {
+                      onSelect(chat.id)
+                      navigate(`/chat/${chat.id}`)
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-      {others.length > 0 && (
-        <>
-          {pinned.length > 0 && <p className="px-4 text-xs uppercase text-muted-foreground">All Chats</p>}
-          {others.map((chat) => (
-            <ChatItem
-            key={chat.id}
-            {...chat}
-            selected={chat.id === selectedId}
-            onClick={() => {
-            onSelect(chat.id)
-            navigate(`/chat/${chat.id}`)
-            }}
-            />         
-         ))}
-        </>
-      )}
+        {others.length > 0 && (
+          <div className="mb-4">
+            {pinned.length > 0 && (
+              <p className="px-4 py-2 text-xs font-semibold uppercase text-muted-foreground">
+                All Chats
+              </p>
+            )}
+            <div className="space-y-1">
+              {others.map((chat) => (
+                <div key={chat.id} className="px-2">
+                  <ChatItem
+                    {...chat}
+                    selected={chat.id === selectedId}
+                    onClick={() => {
+                      onSelect(chat.id)
+                      navigate(`/chat/${chat.id}`)
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

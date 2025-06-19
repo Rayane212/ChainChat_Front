@@ -1,8 +1,8 @@
-import { Outlet } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Bell } from 'lucide-react'
-import Sidebar from '@/components/chat/Sidebar'
+import Sidebar from '@/components/Sidebar'
 import MenuBar from '@/components/MenuBar'
+import { Outlet } from 'react-router-dom'
 
 export default function MainLayout() {
   return (
@@ -22,9 +22,9 @@ export default function MainLayout() {
           </Button>
         </div>
 
-        {/* Routed view */}
+        {/* Dynamic routed content */}
         <div className="flex-1 overflow-hidden">
-          <Outlet />
+            <Outlet />
         </div>
 
         {/* Mobile bottom menu */}

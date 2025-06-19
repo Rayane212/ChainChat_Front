@@ -41,7 +41,7 @@ export default function AuthPage() {
       <div className="absolute bottom-1/4 -right-32 w-64 h-64 rounded-full bg-gradient-to-r from-green-500/10 to-purple-500/10 blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
       
       <div className="relative z-10 w-full max-w-md">
-        {/* Back Button */}
+        {/* Back Button 
         <Button
           variant="ghost"
           className="mb-6 text-foreground-muted hover:text-foreground transition-smooth"
@@ -50,6 +50,7 @@ export default function AuthPage() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Home
         </Button>
+        */}
 
         {/* Logo */}
         <div className="text-center mb-8">

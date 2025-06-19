@@ -8,6 +8,7 @@ import MainLayout from './components/layout/MainLayout'
 
 import { AuthProvider, useAuth } from './context/AuthProvider'
 import { ChatProvider } from './context/ChatProvider'
+import SettingRouter from './components/setting/SettingRouter'
 
 function PrivateRoute() {
   const { isAuthenticated } = useAuth()
@@ -36,6 +37,9 @@ function App() {
                 <Route element={<MainLayout />}>
                   <Route path="/chat" element={<ChatView />} />
                   <Route path="/chat/:id" element={<ChatView />} />
+                  <Route path="/contacts" element={<ChatView />} />
+                  <Route path="/settings" element={<SettingRouter />} />
+                  <Route path="/settings/:section" element={<SettingRouter />} />
                 </Route>
               </Route>
 

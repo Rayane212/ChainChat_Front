@@ -3,11 +3,14 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import MenuBar from '@/components/MenuBar'
 import ChatList from '@/components/chat/ChatList'
 import ContactList from '@/components/contact/ContactList'
-import SettingsList from '@/components/setting/SettingList'
+import SettingList from '@/components/setting/SettingList'
 import ChatHeader from '@/components/chat/ChatHeader'
 import ContactHeader from '@/components/contact/ContactHeader'
 import SettingHeader from '@/components/setting/SettingHeader'
 import SearchBar from '@/components/SearchBar'
+import { SettingViewType } from '@/components/setting/SettingView'
+import { useLocation, useNavigate } from 'react-router-dom'
+
 
 type Section = 'chat' | 'contacts' | 'settings'
 
@@ -86,10 +89,19 @@ const mockChats = [
   }
 ]
 
+
+
 export default function Sidebar() {
   const [activeSection, setActiveSection] = useState<Section>('chat')
   const [selectedChat, setSelectedChat] = useState<string>('1')
   const [searchQuery, setSearchQuery] = useState('')
+  const location = useLocation()
+  const navigate = useNavigate()
+
+
+  const selectedSetting: SettingViewType =
+    (location.pathname.split('/')[2] as SettingViewType) || 'profile'
+  
 
   const filteredChats = mockChats.filter(chat =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -105,17 +117,28 @@ export default function Sidebar() {
   const renderContent = () => {
     if (activeSection === 'chat') {
       return (
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <ChatList chats={filteredChats} selectedId={selectedChat} onSelect={setSelectedChat} />
-        </ScrollArea>
+        </div>
       )
     }
 
     if (activeSection === 'contacts') {
-      return <ScrollArea className="flex-1"><ContactList /></ScrollArea>
+      return (
+        <ScrollArea className="flex-1 min-h-0">
+          <ContactList />
+        </ScrollArea>
+      )
     }
 
-    return <ScrollArea className="flex-1"><SettingsList /></ScrollArea>
+    return (
+      <ScrollArea className="flex-1 min-h-0">
+        <SettingList
+          selected={selectedSetting}
+          onSelect={(view) => navigate(`/settings/${view}`)}
+        />
+      </ScrollArea>
+    )
   }
 
   const searchPlaceholders = {
@@ -125,21 +148,27 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="w-80 h-full bg-surface border-r border-border flex flex-col">
-      {renderHeader()}
+    <div className="w-80 h-full bg-surface border-r border-border flex flex-col overflow-hidden">
+      <div className="flex-shrink-0">
+        {renderHeader()}
+      </div>
 
-      <SearchBar
-        placeholder={searchPlaceholders[activeSection]}
-        value={searchQuery}
-        onChange={setSearchQuery}
-      />
+      <div className="flex-shrink-0">
+        <SearchBar
+          placeholder={searchPlaceholders[activeSection]}
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
+      </div>
 
       {renderContent()}
 
-      <MenuBar
-        active={activeSection}
-        onSelect={(id) => setActiveSection(id as Section)}
-      />
+      <div className="flex-shrink-0">
+        <MenuBar
+          active={activeSection}
+          onSelect={(id) => setActiveSection(id as Section)}
+        />
+      </div>
     </div>
   )
 }

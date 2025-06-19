@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { MessageSquare, Users, Settings as SettingsIcon } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 interface Props {
   active: string
@@ -18,6 +19,7 @@ const navItems = [
 
 export default function MenuBar({ active, onSelect, orientation = 'horizontal' }: Props) {
   const isHorizontal = orientation === 'horizontal'
+  const navigate = useNavigate()
 
   return (
     <div className={cn('border-t border-border', isHorizontal ? 'flex justify-around' : 'flex flex-col')}>
@@ -28,7 +30,10 @@ export default function MenuBar({ active, onSelect, orientation = 'horizontal' }
           <Button
             key={item.id}
             variant="ghost"
-            onClick={() => onSelect(item.id)}
+            onClick={() => {
+              onSelect(item.id)
+              navigate(item.id)
+            }}
             className={cn(
               isHorizontal
                 ? 'flex flex-col items-center space-y-1 py-2 flex-1 h-auto'
