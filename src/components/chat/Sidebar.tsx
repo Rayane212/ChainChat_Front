@@ -1,35 +1,17 @@
-import { useState } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { 
-  Search, 
-  Pin, 
-  VolumeX, 
-  Users, 
-  Shield,
-  MessageSquare,
-  Plus
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useState } from 'react'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import MenuBar from '@/components/MenuBar'
+import ChatList from '@/components/chat/ChatList'
+import ContactList from '@/components/contact/ContactList'
+import SettingsList from '@/components/setting/SettingList'
+import ChatHeader from '@/components/chat/ChatHeader'
+import ContactHeader from '@/components/contact/ContactHeader'
+import SettingHeader from '@/components/setting/SettingHeader'
+import SearchBar from '@/components/SearchBar'
 
-interface Chat {
-  id: string;
-  name: string;
-  avatar?: string;
-  lastMessage: string;
-  timestamp: string;
-  unreadCount: number;
-  isPinned: boolean;
-  isMuted: boolean;
-  isOnline: boolean;
-  isGroup: boolean;
-  isVerified?: boolean;
-}
+type Section = 'chat' | 'contacts' | 'settings'
 
-const mockChats: Chat[] = [
+const mockChats = [
   {
     id: '1',
     name: 'Solana Builders',
@@ -102,164 +84,62 @@ const mockChats: Chat[] = [
     isOnline: false,
     isGroup: false
   }
-];
+]
 
 export default function Sidebar() {
-  const [selectedChat, setSelectedChat] = useState<string>('1');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSection, setActiveSection] = useState<Section>('chat')
+  const [selectedChat, setSelectedChat] = useState<string>('1')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const filteredChats = mockChats.filter(chat =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  )
 
-  const pinnedChats = filteredChats.filter(chat => chat.isPinned);
-  const regularChats = filteredChats.filter(chat => !chat.isPinned);
+  const renderHeader = () => {
+    if (activeSection === 'chat') return <ChatHeader />
+    if (activeSection === 'contacts') return <ContactHeader />
+    return <SettingHeader />
+  }
 
-  const ChatItem = ({ chat }: { chat: Chat }) => (
-    <div
-      className={cn(
-        "group relative flex items-center space-x-3 p-3 mx-2 rounded-xl cursor-pointer transition-all duration-200",
-        selectedChat === chat.id
-          ? "bg-purple-500/20 border border-purple-500/30"
-          : "hover:bg-surface-hover active:scale-[0.98]"
-      )}
-      onClick={() => setSelectedChat(chat.id)}
-    >
-      <div className="relative">
-        <Avatar className="w-12 h-12">
-          <AvatarImage src={chat.avatar ? undefined : ""} />
-          <AvatarFallback className={cn(
-            "font-semibold text-sm",
-            chat.isGroup 
-              ? "bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-blue-400"
-              : "bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400"
-          )}>
-            {chat.avatar || (chat.isGroup ? <Users className="w-5 h-5" /> : chat.name.slice(0, 2).toUpperCase())}
-          </AvatarFallback>
-        </Avatar>
-        
-        {chat.isOnline && !chat.isGroup && (
-          <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-background rounded-full" />
-        )}
-      </div>
+  const renderContent = () => {
+    if (activeSection === 'chat') {
+      return (
+        <ScrollArea className="flex-1">
+          <ChatList chats={filteredChats} selectedId={selectedChat} onSelect={setSelectedChat} />
+        </ScrollArea>
+      )
+    }
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center space-x-1.5">
-            <h3 className={cn(
-              "font-semibold truncate text-sm",
-              selectedChat === chat.id ? "text-purple-300" : "text-foreground"
-            )}>
-              {chat.name}
-            </h3>
-            {chat.isVerified && (
-              <Shield className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-            )}
-            {chat.isPinned && (
-              <Pin className="w-3 h-3 text-foreground-muted flex-shrink-0" />
-            )}
-            {chat.isMuted && (
-              <VolumeX className="w-3 h-3 text-foreground-muted flex-shrink-0" />
-            )}
-          </div>
-          <span className="text-xs text-foreground-muted flex-shrink-0">
-            {chat.timestamp}
-          </span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-foreground-muted truncate pr-2">
-            {chat.lastMessage}
-          </p>
-          {chat.unreadCount > 0 && (
-            <Badge className="bg-purple-500 hover:bg-purple-500 text-white text-xs h-5 min-w-[20px] px-1.5 rounded-full flex-shrink-0">
-              {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-            </Badge>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+    if (activeSection === 'contacts') {
+      return <ScrollArea className="flex-1"><ContactList /></ScrollArea>
+    }
+
+    return <ScrollArea className="flex-1"><SettingsList /></ScrollArea>
+  }
+
+  const searchPlaceholders = {
+    chat: 'Search conversations...',
+    contacts: 'Search contacts...',
+    settings: 'Search settings...'
+  }
 
   return (
     <div className="w-80 h-full bg-surface border-r border-border flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500">
-              <MessageSquare className="w-4 h-4 text-white" />
-            </div>
-            <h1 className="text-lg font-bold text-foreground">ChainChat</h1>
-          </div>
-          <Button 
-            size="sm" 
-            className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 rounded-lg"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
+      {renderHeader()}
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-          <Input
-            placeholder="Search conversations..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-background/50 border-border focus:border-purple-500/50 focus:ring-purple-500/20 rounded-xl"
-          />
-        </div>
-      </div>
+      <SearchBar
+        placeholder={searchPlaceholders[activeSection]}
+        value={searchQuery}
+        onChange={setSearchQuery}
+      />
 
-      {/* Chat List */}
-      <ScrollArea className="flex-1">
-        <div className="py-2">
-          {/* Pinned Chats */}
-          {pinnedChats.length > 0 && (
-            <div className="mb-2">
-              <div className="px-4 py-2">
-                <h2 className="text-xs font-medium text-foreground-muted uppercase tracking-wider">
-                  Pinned
-                </h2>
-              </div>
-              <div className="space-y-1">
-                {pinnedChats.map((chat) => (
-                  <ChatItem key={chat.id} chat={chat} />
-                ))}
-              </div>
-            </div>
-          )}
+      {renderContent()}
 
-          {/* Regular Chats */}
-          {regularChats.length > 0 && (
-            <div>
-              {pinnedChats.length > 0 && (
-                <div className="px-4 py-2">
-                  <h2 className="text-xs font-medium text-foreground-muted uppercase tracking-wider">
-                    All Chats
-                  </h2>
-                </div>
-              )}
-              <div className="space-y-1">
-                {regularChats.map((chat) => (
-                  <ChatItem key={chat.id} chat={chat} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {filteredChats.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 px-4">
-              <MessageSquare className="w-12 h-12 text-foreground-muted mb-3" />
-              <p className="text-foreground-muted text-center">
-                {searchQuery ? 'No conversations found' : 'No conversations yet'}
-              </p>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+      <MenuBar
+        active={activeSection}
+        onSelect={(id) => setActiveSection(id as Section)}
+      />
     </div>
-  );
+  )
 }
