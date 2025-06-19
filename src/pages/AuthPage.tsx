@@ -7,21 +7,31 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MessageSquare, Mail, Lock, User, ArrowLeft, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthProvider'
+
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
 
+  const { login } = useAuth()
+
   const handleAuth = async (type: 'login' | 'signup') => {
-    setIsLoading(true);
-    
-    // Simulate authentication
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    toast.success(`${type === 'login' ? 'Welcome back!' : 'Account created successfully!'}`);
-    navigate('/chat');
-    setIsLoading(false);
-  };
+    setIsLoading(true)
+  
+    await new Promise(resolve => setTimeout(resolve, 1500))
+  
+    const mockUser = {
+      id: crypto.randomUUID(),
+      username: 'Rayane',
+      email: 'rayane@chainchat.sol'
+    }
+  
+    login(mockUser)
+    toast.success(type === 'login' ? 'Welcome back!' : 'Account created successfully!')
+    navigate('/chat')
+    setIsLoading(false)
+  }
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center p-6">
