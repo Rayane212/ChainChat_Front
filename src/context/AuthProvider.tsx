@@ -1,53 +1,57 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
+import * as authService from '@/service/auth.service'
+import { User } from '@/service/auth.service'
 
-interface User {
-  id: string
-  username: string
-  email: string
-}
-
-interface AuthContextType {
+interface AuthContextProps {
   user: User | null
-  login: (userData: User) => void
-  logout: () => void
   isAuthenticated: boolean
+  loading: boolean
+  login: (emailOrUsername: string, password: string) => Promise<void>
+  logout: () => void
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextProps | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // 🧪 simulate restore from localStorage
-    const stored = localStorage.getItem('chainchat_user')
-    if (stored) {
-      setUser(JSON.parse(stored))
+    const token = localStorage.getItem('accessToken')
+    if (token) {
+        authService
+        .validateToken(token)
+        .then(user => setUser(user)) // ou juste set isAuthenticated = true
+        .catch(() => localStorage.removeItem('accessToken'))
+        .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
     }
   }, [])
 
-  const login = (userData: User) => {
-    setUser(userData)
-    localStorage.setItem('chainchat_user', JSON.stringify(userData))
+
+  const login = async (emailOrUsername: string, password: string) => {
+    const token = await authService.login({ emailOrUsername, password })
+    if (token) {
+      const user = await authService.validateToken(token)
+      setUser(user)
+    }
   }
 
   const logout = () => {
+    authService.logout()
     setUser(null)
-    localStorage.removeItem('chainchat_user')
   }
 
-  const value = {
-    user,
-    login,
-    logout,
-    isAuthenticated: !!user
-  }
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-export function useAuth() {
+export const useAuth = (): AuthContextProps => {
   const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
+  if (!context) throw new Error('useAuth must be used within an AuthProvider')
   return context
 }
