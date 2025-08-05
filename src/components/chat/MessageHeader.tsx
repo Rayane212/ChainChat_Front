@@ -3,14 +3,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 
 interface MessageHeaderProps {
-  chatId: string
+  conversationId: string
   name?: string
   avatar?: string
   isOnline?: boolean
 }
 
 export default function MessageHeader({
-  chatId,
+  conversationId,
   name = 'Solana Builder',
   avatar = '',
   isOnline = true

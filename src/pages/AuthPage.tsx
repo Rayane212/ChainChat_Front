@@ -27,7 +27,7 @@ export default function AuthPage() {
       email: 'rayane@chainchat.sol'
     }
   
-    login("Rayane212", "azerty1234")
+    login("Jojo", "azerty1234")
     toast.success(type === 'login' ? 'Welcome back!' : 'Account created successfully!')
     navigate('/chat')
     setIsLoading(false)

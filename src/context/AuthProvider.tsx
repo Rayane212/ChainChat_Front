@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import * as authService from '@/service/auth.service'
-import { User } from '@/service/auth.service'
+import * as authService from '@/services/auth.service'
+import { User } from '@/services/auth.service'
 
 interface AuthContextProps {
   user: User | null

@@ -4,7 +4,7 @@ import MenuBar from '@/components/MenuBar'
 import ChatList from '@/components/chat/ChatList'
 import ContactList from '@/components/contact/ContactList'
 import SettingList from '@/components/setting/SettingList'
-import ChatHeader from '@/components/chat/ChatHeader'
+import SecureChatHeader from '@/components/chat/SecureChatHeader'
 import ContactHeader from '@/components/contact/ContactHeader'
 import SettingHeader from '@/components/setting/SettingHeader'
 import SearchBar from '@/components/SearchBar'
@@ -109,7 +109,7 @@ export default function Sidebar() {
   )
 
   const renderHeader = () => {
-    if (activeSection === 'chat') return <ChatHeader />
+    if (activeSection === 'chat') return <SecureChatHeader conversationId={''} />
     if (activeSection === 'contacts') return <ContactHeader />
     return <SettingHeader />
   }
