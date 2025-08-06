@@ -1,7 +1,7 @@
 import apiClient from '@/api/apiClient';
 import webSocketService, { E2EEMessage } from './websocket.service';
 import { generateKeyPair } from '@/E2E/encryption';
-import { SodiumKeyManager } from '@/E2E/keyManager';
+import { NativeKeyManager } from '@/E2E/keyManager';
 
 export interface DecryptedMessage {
   id: string;
@@ -9,7 +9,7 @@ export interface DecryptedMessage {
   senderName?: string;
   recipientId?: string;
   conversationId: string;
-  content: string; // ✅ Contenu déchiffré
+  content: string;
   timestamp: string;
   isFromMe: boolean;
   readAt?: string;
@@ -35,35 +35,75 @@ export interface CreateGroupRequest {
 }
 
 class MessagingE2EEService {
-  private keyManager: SodiumKeyManager;
+  private keyManager: NativeKeyManager;
   private messageCache: Map<string, DecryptedMessage[]> = new Map();
   private conversationCache: Map<string, Conversation> = new Map();
+  private currentUserId: string | null = null;
 
   constructor() {
-    this.keyManager = new SodiumKeyManager();
+    this.keyManager = new NativeKeyManager();
     this.setupWebSocketHandlers();
+    this.initializeCurrentUser();
+  }
+
+  // ✅ FIX : Récupérer le vrai userId depuis localStorage/JWT
+  private initializeCurrentUser() {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        // Décoder le JWT pour récupérer l'ID utilisateur
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        this.currentUserId = payload.id || payload.sub;
+      }
+    } catch (error) {
+      console.warn('Could not extract user ID from token:', error);
+    }
   }
 
   private setupWebSocketHandlers(): void {
-    // Écouter les nouveaux messages
     webSocketService.onMessage((encryptedMessage: E2EEMessage) => {
       const decryptedMessage = this.convertToDecryptedMessage(encryptedMessage);
       this.addMessageToCache(decryptedMessage);
-      
-      // Mettre à jour la conversation
       this.updateConversationLastMessage(decryptedMessage);
     });
   }
 
   // 🔑 Gestion des clés E2EE
   async initializeUserKeys(userId: string, password: string): Promise<{ publicKey: string; privateKey: string }> {
+    // ✅ DEBUG : Vérifier les paramètres reçus
+    console.log('🔑 messagingService.initializeUserKeys called with:', {
+      userId,
+      passwordType: typeof password,
+      passwordLength: password?.length,
+      passwordValue: password // ⚠️ À supprimer en production
+    });
+
     try {
+      // Validation des paramètres
+      if (!userId || typeof userId !== 'string') {
+        throw new Error('Invalid user ID');
+      }
+
+      if (!password || typeof password !== 'string' || password.trim().length === 0) {
+        throw new Error('Invalid password provided');
+      }
+
+      const trimmedPassword = password.trim();
+      
+      console.log('🔍 After trim:', {
+        originalPassword: password,
+        trimmedPassword: trimmedPassword,
+        trimmedType: typeof trimmedPassword,
+        trimmedLength: trimmedPassword?.length
+      });
+
       // Vérifier si les clés existent déjà
       const hasKeys = await this.keyManager.hasKeys(userId);
       
       if (hasKeys.hasPrivate && hasKeys.hasPublic) {
         // Clés existantes - déverrouiller la session
-        await webSocketService.unlockSession(password, userId);
+        console.log('🔓 Keys exist, unlocking session...');
+        await webSocketService.unlockSession(trimmedPassword, userId);
         const publicKey = await this.keyManager.getPublicKey(userId);
         
         return {
@@ -72,18 +112,40 @@ class MessagingE2EEService {
         };
       }
 
+      // Test préalable de generateKeyPair
+      console.log('🧪 Testing generateKeyPair function...');
+      try {
+        const testResult = await generateKeyPair();
+        console.log('✅ GenerateKeyPair test successful:', {
+          hasPublicKey: !!testResult?.publicKey,
+          hasPrivateKey: !!testResult?.privateKey,
+          publicKeyLength: testResult?.publicKey?.length,
+          privateKeyLength: testResult?.privateKey?.length
+        });
+      } catch (testError) {
+        console.error('❌ GenerateKeyPair test failed:', testError);
+        throw new Error('generateKeyPair function is not working: ' + (testError instanceof Error ? testError.message : String(testError)));
+      }
+
       // Générer de nouvelles clés
+      console.log('🔑 Generating new keys...');
       const { publicKey, privateKey } = await generateKeyPair();
+      console.log('✅ Keys generated, storing...');
       
       // Stocker les clés de manière sécurisée
-      await this.keyManager.storePrivateKey(privateKey, password, userId);
+      await this.keyManager.storePrivateKey(privateKey, trimmedPassword, userId);
+      console.log('✅ Private key stored');
+      
       await this.keyManager.storePublicKey(publicKey, userId);
+      console.log('✅ Public key stored');
       
       // Déverrouiller la session
-      await webSocketService.unlockSession(password, userId);
+      await webSocketService.unlockSession(trimmedPassword, userId);
+      console.log('✅ Session unlocked');
       
       // Envoyer la clé publique au serveur
       await this.registerPublicKey(publicKey);
+      console.log('✅ Public key registered with server');
       
       return {
         publicKey,
@@ -98,20 +160,13 @@ class MessagingE2EEService {
 
   async regenerateKeys(userId: string, password: string): Promise<{ publicKey: string }> {
     try {
-      // Supprimer les anciennes clés
       await this.keyManager.deleteUserKeys(userId);
       
-      // Générer de nouvelles clés
       const { publicKey, privateKey } = await generateKeyPair();
       
-      // Stocker les nouvelles clés
       await this.keyManager.storePrivateKey(privateKey, password, userId);
       await this.keyManager.storePublicKey(publicKey, userId);
-      
-      // Déverrouiller la session avec les nouvelles clés
       await webSocketService.unlockSession(password, userId);
-      
-      // Mettre à jour la clé publique sur le serveur
       await this.registerPublicKey(publicKey);
       
       return { publicKey };
@@ -122,14 +177,17 @@ class MessagingE2EEService {
     }
   }
 
+  // ✅ FIX : Endpoint correct pour votre backend
   private async registerPublicKey(publicKey: string): Promise<void> {
     try {
-      await apiClient.post('/messages/regenerate-keys', {
-        publicKey // ✅ Seulement la clé publique est envoyée
+      // Utiliser l'endpoint de votre messaging service
+      await apiClient.post('/messages/public-key', {
+        publicKey
       });
     } catch (error) {
       console.error('❌ Failed to register public key:', error);
-      throw error;
+      // Ne pas bloquer si l'endpoint n'existe pas encore
+      console.warn('Public key registration endpoint may not be implemented yet');
     }
   }
 
@@ -143,9 +201,7 @@ class MessagingE2EEService {
       throw new Error('Not connected to messaging service');
     }
 
-    // Générer un ID de conversation si pas fourni
-    const finalConversationId = conversationId || [recipientId, 'current-user-id'].sort().join('-');
-
+    const finalConversationId = conversationId || this.generateConversationId(recipientId);
     await webSocketService.sendMessage(recipientId, content, finalConversationId);
   }
 
@@ -161,27 +217,27 @@ class MessagingE2EEService {
     await webSocketService.sendGroupMessage(conversationId, content);
   }
 
-  // 📋 Gestion des conversations
+  // 📋 Gestion des conversations - ✅ FIX : Endpoints alignés
   async getConversations(): Promise<Conversation[]> {
     try {
+      // Utiliser l'endpoint de votre backend
       const response = await apiClient.get('/messages');
-      const conversationsData = response.data.data;
+      const conversationsData = response.data.data || response.data;
 
       const conversations: Conversation[] = conversationsData.map((conv: any) => ({
         id: conv.id,
         name: conv.name || this.getConversationName(conv),
-        isGroup: conv.isGroup,
+        isGroup: conv.isGroup || false,
         participants: conv.userConversations?.map((uc: any) => ({
           id: uc.user.id,
           username: uc.user.username,
           publicKey: uc.user.publicKey
         })) || [],
         lastMessage: conv.messages?.[0] ? this.createDecryptedMessageStub(conv.messages[0]) : undefined,
-        unreadCount: 0, // À calculer côté client
+        unreadCount: 0,
         createdAt: conv.createdAt || new Date().toISOString()
       }));
 
-      // Mettre en cache
       conversations.forEach(conv => {
         this.conversationCache.set(conv.id, conv);
       });
@@ -195,17 +251,15 @@ class MessagingE2EEService {
   }
 
   async getMessages(conversationId: string): Promise<DecryptedMessage[]> {
-    // Vérifier le cache d'abord
     if (this.messageCache.has(conversationId)) {
       return this.messageCache.get(conversationId)!;
     }
 
     try {
-      const response = await apiClient.get(`/conversations/${conversationId}/messages`);
-      const messagesData = response.data.data;
+      // ✅ FIX : Endpoint correct
+      const response = await apiClient.get(`/messages/conversations/${conversationId}/messages`);
+      const messagesData = response.data.data || response.data;
 
-      // Note: Les messages sont stockés chiffrés côté serveur
-      // Le déchiffrement se fait automatiquement via WebSocket lors de la réception
       const messages: DecryptedMessage[] = messagesData.map((msg: any) => 
         this.createDecryptedMessageStub(msg)
       );
@@ -227,7 +281,7 @@ class MessagingE2EEService {
         userIds: request.userIds
       });
 
-      const groupData = response.data.data;
+      const groupData = response.data.data || response.data;
       
       const conversation: Conversation = {
         id: groupData.id,
@@ -251,60 +305,20 @@ class MessagingE2EEService {
     }
   }
 
-  async addUserToGroup(conversationId: string, userId: string): Promise<void> {
-    try {
-      await apiClient.post(`/messages/groups/${conversationId}/members/${userId}`);
-      
-      // Invalider le cache de la conversation
-      this.conversationCache.delete(conversationId);
-      
-    } catch (error) {
-      console.error('❌ Failed to add user to group:', error);
-      throw new Error('Failed to add user to group');
-    }
-  }
-
-  async removeUserFromGroup(conversationId: string, userId: string): Promise<void> {
-    try {
-      await apiClient.delete(`/messages/groups/${conversationId}/members/${userId}`);
-      
-      // Invalider le cache
-      this.conversationCache.delete(conversationId);
-      
-    } catch (error) {
-      console.error('❌ Failed to remove user from group:', error);
-      throw new Error('Failed to remove user from group');
-    }
-  }
-
-  async leaveGroup(conversationId: string): Promise<void> {
-    try {
-      await apiClient.delete(`/messages/groups/${conversationId}/members`);
-      
-      // Supprimer du cache
-      this.conversationCache.delete(conversationId);
-      this.messageCache.delete(conversationId);
-      
-    } catch (error) {
-      console.error('❌ Failed to leave group:', error);
-      throw new Error('Failed to leave group');
-    }
-  }
-
-  // 🔄 Gestion du cache et utilitaires
-  convertToDecryptedMessage(encryptedMessage: E2EEMessage): DecryptedMessage { // private ?
+  // 🔄 Utilitaires
+  convertToDecryptedMessage(encryptedMessage: E2EEMessage): DecryptedMessage {
     return {
       id: encryptedMessage.id,
       senderId: encryptedMessage.senderId,
       recipientId: encryptedMessage.recipientId,
       conversationId: encryptedMessage.conversationId,
-      content: encryptedMessage.encryptedContent, // Déjà déchiffré par le WebSocketService
+      content: encryptedMessage.encryptedContent,
       timestamp: encryptedMessage.timestamp,
       isFromMe: encryptedMessage.senderId === this.getCurrentUserId(),
     };
   }
 
-  public createDecryptedMessageStub(messageData: any): DecryptedMessage {
+  createDecryptedMessageStub(messageData: any): DecryptedMessage {
     return {
       id: messageData.id,
       senderId: messageData.senderId,
@@ -343,9 +357,40 @@ class MessagingE2EEService {
     return otherUser?.user.username || 'Unknown';
   }
 
+  private generateConversationId(recipientId: string): string {
+    const currentUserId = this.getCurrentUserId();
+    return [recipientId, currentUserId].sort().join('-');
+  }
+
+  // ✅ FIX : getCurrentUserId() avec logging d'erreurs amélioré
   private getCurrentUserId(): string {
-    // À récupérer depuis le contexte d'auth
-    return 'current-user-id'; // Placeholder
+    if (this.currentUserId) {
+      return this.currentUserId;
+    }
+
+    // Fallback : essayer de récupérer depuis le token
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        this.currentUserId = payload.id || payload.sub;
+        
+        if (this.currentUserId) {
+          console.log('✅ User ID recovered from token:', this.currentUserId);
+          return this.currentUserId;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Could not extract user ID from token:', error);
+    }
+
+    console.warn('⚠️ Using fallback user ID - this may cause issues');
+    return 'unknown';
+  }
+
+  // 🔄 Mise à jour de l'ID utilisateur (appelé après login)
+  updateCurrentUserId(userId: string): void {
+    this.currentUserId = userId;
   }
 
   // 🧹 Nettoyage

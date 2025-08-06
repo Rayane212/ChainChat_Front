@@ -1,12 +1,13 @@
-import sodium from 'libsodium-wrappers';
+// ✅ OPTIMAL : KeyManager avec Web Crypto API natif - Aucune dépendance
+import { deriveKeyFromPassword } from './encryption';
 
 interface StoredKeyData {
   id: string;
   encryptedPrivateKey: string;
-  salt: string; // Base64 au lieu d'Array<number>
-  nonce: string; // Base64 au lieu d'Array<number>
+  salt: string;
+  iv: string; // IV pour AES-GCM
   timestamp: number;
-  version: string; // Versioning des algos
+  version: string;
 }
 
 interface StoredPublicKey {
@@ -15,21 +16,22 @@ interface StoredPublicKey {
   timestamp: number;
 }
 
-export class SodiumKeyManager {
+// Utilitaires de conversion
+const encodeBase64 = (bytes: Uint8Array): string => {
+  return btoa(String.fromCharCode(...bytes));
+};
+
+const decodeBase64 = (str: string): Uint8Array => {
+  return new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
+};
+
+export class NativeKeyManager {
   private dbName = 'E2EEKeyStore';
   private dbVersion = 1;
   private db: IDBDatabase | null = null;
-  private sodiumReady: Promise<void>;
-  private readonly CURRENT_VERSION = '1.0';
+  private readonly CURRENT_VERSION = '3.0'; // Version Web Crypto API
 
-  constructor() {
-    // Initialiser sodium une seule fois et stocker la promesse
-    this.sodiumReady = sodium.ready;
-  }
-
-  private async ensureSodiumReady() {
-    await this.sodiumReady;
-  }
+  constructor() {}
 
   // Initialiser IndexedDB
   async initDB(): Promise<IDBDatabase> {
@@ -41,6 +43,7 @@ export class SodiumKeyManager {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
+        console.log('✅ IndexedDB initialized');
         resolve(this.db);
       };
       
@@ -48,84 +51,152 @@ export class SodiumKeyManager {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains('keys')) {
           db.createObjectStore('keys', { keyPath: 'id' });
+          console.log('✅ IndexedDB keys store created');
         }
       };
     });
   }
 
-  // Dériver une clé de chiffrement à partir du mot de passe avec libsodium
-  private async deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-    
-    // Validation de la force du mot de passe
+  // ✅ Validation du mot de passe
+  private validatePassword(password: any): void {
+    console.log('🔍 Validating password:', {
+      type: typeof password,
+      isNull: password === null,
+      isUndefined: password === undefined,
+      length: typeof password === 'string' ? password.length : 'N/A'
+    });
+
+    if (password === null || password === undefined) {
+      throw new Error('Password cannot be null or undefined');
+    }
+
+    if (typeof password !== 'string') {
+      throw new Error(`Password must be a string, received: ${typeof password}`);
+    }
+
     if (password.length < 8) {
       throw new Error('Le mot de passe doit contenir au moins 8 caractères');
     }
-    
-    // Utiliser argon2id (plus sécurisé que PBKDF2)
-    return sodium.crypto_pwhash(
-      32, // longueur de la clé dérivée
-      password,
-      salt,
-      sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE, // ~0.1 seconde
-      sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE, // ~64MB
-      sodium.crypto_pwhash_ALG_ARGON2ID13
-    );
-  }
 
-  // Chiffrer et stocker la clé privée
-  async storePrivateKey(privateKey: string, password: string, userId: string): Promise<void> {
-    await this.initDB();
-    await this.ensureSodiumReady();
-
-    // Validation de la force du mot de passe
-    if (password.length < 8) {
-      throw new Error('Le mot de passe doit contenir au moins 8 caractères');
-    }
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
       throw new Error('Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre');
     }
 
-    // Générer un salt unique
-    const salt = sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES);
-    
-    // Dériver la clé de chiffrement
-    const derivedKey = await this.deriveKeyFromPassword(password, salt);
-    
-    // Générer un nonce pour le chiffrement
-    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-    
-    // Chiffrer la clé privée
-    const encryptedPrivateKey = sodium.crypto_secretbox_easy(
-      sodium.from_base64(privateKey),
-      nonce,
-      derivedKey
-    );
-
-    // Stocker dans IndexedDB avec encodage Base64
-    const transaction = this.db!.transaction(['keys'], 'readwrite');
-    const store = transaction.objectStore('keys');
-    
-    const keyData: StoredKeyData = {
-      id: `privateKey_${userId}`,
-      encryptedPrivateKey: sodium.to_base64(encryptedPrivateKey),
-      salt: sodium.to_base64(salt),
-      nonce: sodium.to_base64(nonce),
-      timestamp: Date.now(),
-      version: this.CURRENT_VERSION
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      const request = store.put(keyData);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
+    console.log('✅ Password validation passed');
   }
 
-  // Récupérer et déchiffrer la clé privée
+  // ✅ Chiffrer et stocker la clé privée avec Web Crypto API natif
+  async storePrivateKey(privateKey: string, password: any, userId: string): Promise<void> {
+    console.log('🔑 NativeKeyManager.storePrivateKey called with:', {
+      privateKeyType: typeof privateKey,
+      privateKeyLength: privateKey?.length,
+      passwordType: typeof password,
+      userId: userId
+    });
+
+    await this.initDB();
+
+    // ✅ VALIDATION
+    try {
+      this.validatePassword(password);
+    } catch (error) {
+      console.error('❌ Password validation failed:', error);
+      throw error;
+    }
+
+    // Validation des autres paramètres
+    if (!privateKey || typeof privateKey !== 'string') {
+      throw new Error('Private key must be a non-empty string');
+    }
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
+
+    try {
+      console.log('🔐 Starting encryption with Web Crypto API...');
+
+      // Générer un salt unique (32 bytes)
+      const salt = crypto.getRandomValues(new Uint8Array(32));
+      console.log('✅ Salt generated:', { length: salt.length });
+      
+      // Dériver une clé de chiffrement avec PBKDF2 natif
+      const derivedKeyBytes = await deriveKeyFromPassword(password, salt);
+      console.log('✅ Key derived from password');
+
+      // Importer la clé dérivée pour AES-GCM
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        derivedKeyBytes,
+        {
+          name: 'AES-GCM',
+        },
+        false,
+        ['encrypt']
+      );
+      
+      // Générer un IV pour AES-GCM (12 bytes)
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      console.log('✅ IV generated:', { length: iv.length });
+      
+      // Chiffrer la clé privée avec AES-GCM natif
+      const privateKeyBytes = decodeBase64(privateKey);
+      const encryptedPrivateKeyBuffer = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+        },
+        cryptoKey,
+        privateKeyBytes
+      );
+      
+      console.log('✅ Private key encrypted:', { 
+        encryptedLength: encryptedPrivateKeyBuffer.byteLength 
+      });
+
+      // Stocker dans IndexedDB
+      const transaction = this.db!.transaction(['keys'], 'readwrite');
+      const store = transaction.objectStore('keys');
+      
+      const keyData: StoredKeyData = {
+        id: `privateKey_${userId}`,
+        encryptedPrivateKey: encodeBase64(new Uint8Array(encryptedPrivateKeyBuffer)),
+        salt: encodeBase64(salt),
+        iv: encodeBase64(iv),
+        timestamp: Date.now(),
+        version: this.CURRENT_VERSION
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const request = store.put(keyData);
+        request.onerror = () => {
+          console.error('❌ IndexedDB put failed:', request.error);
+          reject(request.error);
+        };
+        request.onsuccess = () => {
+          console.log('✅ Private key stored successfully');
+          resolve();
+        };
+      });
+
+    } catch (error) {
+      console.error('❌ Error in storePrivateKey:', error);
+      throw new Error(`Failed to store private key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // ✅ Récupérer et déchiffrer la clé privée avec Web Crypto API
   async getPrivateKey(password: string, userId: string): Promise<string> {
     await this.initDB();
-    await this.ensureSodiumReady();
+
+    console.log('🔓 Getting private key for user:', userId);
+
+    // Validation du mot de passe
+    this.validatePassword(password);
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
 
     const transaction = this.db!.transaction(['keys'], 'readonly');
     const store = transaction.objectStore('keys');
@@ -142,40 +213,60 @@ export class SodiumKeyManager {
       };
     });
 
-    // Vérification de la version (pour migration future)
-    if (keyData.version && keyData.version !== this.CURRENT_VERSION) {
-      console.warn(`Version de clé obsolète: ${keyData.version}, actuelle: ${this.CURRENT_VERSION}`);
-    }
+    console.log('✅ Private key data found, version:', keyData.version);
 
-    // Reconstituer les données à partir de Base64
-    const salt = sodium.from_base64(keyData.salt);
-    const nonce = sodium.from_base64(keyData.nonce);
-    const encryptedPrivateKey = sodium.from_base64(keyData.encryptedPrivateKey);
+    // Reconstituer les données
+    const salt = decodeBase64(keyData.salt);
+    const iv = decodeBase64(keyData.iv);
+    const encryptedPrivateKey = decodeBase64(keyData.encryptedPrivateKey);
 
     try {
-      // Dériver la clé de déchiffrement
-      const derivedKey = await this.deriveKeyFromPassword(password, salt);
+      // Dériver la clé de déchiffrement avec PBKDF2 natif
+      const derivedKeyBytes = await deriveKeyFromPassword(password, salt);
 
-      // Déchiffrer la clé privée
-      const decryptedPrivateKey = sodium.crypto_secretbox_open_easy(
-        encryptedPrivateKey,
-        nonce,
-        derivedKey
+      // Importer la clé dérivée pour AES-GCM
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        derivedKeyBytes,
+        {
+          name: 'AES-GCM',
+        },
+        false,
+        ['decrypt']
       );
 
-      if (!decryptedPrivateKey) {
-        throw new Error('Échec du déchiffrement');
-      }
+      // Déchiffrer la clé privée avec AES-GCM natif
+      const decryptedPrivateKeyBuffer = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+        },
+        cryptoKey,
+        encryptedPrivateKey
+      );
 
-      return sodium.to_base64(decryptedPrivateKey);
+      console.log('✅ Private key decrypted successfully');
+      return encodeBase64(new Uint8Array(decryptedPrivateKeyBuffer));
+      
     } catch (error) {
+      console.error('❌ Decryption failed:', error);
       throw new Error('Mot de passe incorrect ou clé corrompue');
     }
   }
 
-  // Stocker la clé publique (peut être en clair)
+  // ✅ Stocker la clé publique (en clair)
   async storePublicKey(publicKey: string, userId: string): Promise<void> {
     await this.initDB();
+
+    console.log('📝 Storing public key for user:', userId);
+
+    if (!publicKey || typeof publicKey !== 'string') {
+      throw new Error('Public key must be a non-empty string');
+    }
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
 
     const transaction = this.db!.transaction(['keys'], 'readwrite');
     const store = transaction.objectStore('keys');
@@ -189,13 +280,22 @@ export class SodiumKeyManager {
     await new Promise<void>((resolve, reject) => {
       const request = store.put(keyData);
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        console.log('✅ Public key stored successfully');
+        resolve();
+      };
     });
   }
 
-  // Récupérer la clé publique
+  // ✅ Récupérer la clé publique
   async getPublicKey(userId: string): Promise<string> {
     await this.initDB();
+
+    console.log('📖 Getting public key for user:', userId);
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
 
     const transaction = this.db!.transaction(['keys'], 'readonly');
     const store = transaction.objectStore('keys');
@@ -212,12 +312,19 @@ export class SodiumKeyManager {
       };
     });
 
+    console.log('✅ Public key retrieved successfully');
     return keyData.publicKey;
   }
 
-  // Vérifier si les clés existent pour un utilisateur
+  // ✅ Vérifier si les clés existent pour un utilisateur
   async hasKeys(userId: string): Promise<{ hasPrivate: boolean; hasPublic: boolean }> {
     await this.initDB();
+
+    console.log('🔍 Checking keys existence for user:', userId);
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
 
     const transaction = this.db!.transaction(['keys'], 'readonly');
     const store = transaction.objectStore('keys');
@@ -235,12 +342,19 @@ export class SodiumKeyManager {
       })
     ]);
 
+    console.log('✅ Keys existence checked:', { hasPrivate, hasPublic });
     return { hasPrivate, hasPublic };
   }
 
-  // Supprimer toutes les clés d'un utilisateur
+  // ✅ Supprimer toutes les clés d'un utilisateur
   async deleteUserKeys(userId: string): Promise<void> {
     await this.initDB();
+
+    console.log('🗑️ Deleting keys for user:', userId);
+
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('User ID must be a non-empty string');
+    }
 
     const transaction = this.db!.transaction(['keys'], 'readwrite');
     const store = transaction.objectStore('keys');
@@ -257,103 +371,63 @@ export class SodiumKeyManager {
         request.onsuccess = () => resolve();
       })
     ]);
+
+    console.log('✅ User keys deleted successfully');
   }
 
-  // Nettoyer les clés expirées
-  async cleanExpiredKeys(maxAge: number = 30 * 24 * 60 * 60 * 1000): Promise<void> {
-    await this.initDB();
-
-    const transaction = this.db!.transaction(['keys'], 'readwrite');
-    const store = transaction.objectStore('keys');
-    const now = Date.now();
-
-    const request = store.openCursor();
-    request.onsuccess = (event) => {
-      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-      if (cursor) {
-        const data = cursor.value;
-        if (data.timestamp && (now - data.timestamp) > maxAge) {
-          cursor.delete();
-        }
-        cursor.continue();
-      }
-    };
-  }
-
-  // Fermer la base de données
+  // ✅ Fermer la base de données
   close(): void {
     if (this.db) {
       this.db.close();
       this.db = null;
+      console.log('✅ Database closed');
     }
   }
 }
 
-// Gestionnaire de session pour garder les clés en mémoire
-export class SessionManager {
-  private privateKey: string | null = null;
-  private publicKey: string | null = null;
-  private lockTimer: NodeJS.Timeout | null = null;
-  private keyManager: SodiumKeyManager;
+// ✅ SessionManager avec Web Crypto API
+export class NativeSessionManager {
+  private sessionKeys: { publicKey: string; privateKey: string } | null = null;
+  private keyManager: NativeKeyManager;
 
-  constructor() {
-    this.keyManager = new SodiumKeyManager();
+  constructor(keyManager: NativeKeyManager) {
+    this.keyManager = keyManager;
+    console.log('✅ NativeSessionManager initialized');
   }
 
-  // Déverrouiller avec le mot de passe
   async unlock(password: string, userId: string): Promise<void> {
-    this.privateKey = await this.keyManager.getPrivateKey(password, userId);
-    this.publicKey = await this.keyManager.getPublicKey(userId);
-    
-    // Auto-verrouillage après 30 minutes d'inactivité
-    this.resetAutoLock();
-  }
+    console.log('🔓 NativeSessionManager.unlock called for user:', userId);
 
-  // Obtenir les clés de session (si déverrouillées)
-  getKeys(): { privateKey: string; publicKey: string } | null {
-    if (!this.privateKey || !this.publicKey) {
-      return null;
+    try {
+      // Utiliser le keyManager natif
+      const privateKey = await this.keyManager.getPrivateKey(password, userId);
+      const publicKey = await this.keyManager.getPublicKey(userId);
+      
+      this.sessionKeys = { publicKey, privateKey };
+      console.log('✅ Session unlocked successfully with Web Crypto API');
+    } catch (error) {
+      console.error('❌ Failed to unlock session:', error);
+      throw new Error('Invalid password or corrupted keys');
     }
-    
-    // Réinitialiser le timer d'auto-verrouillage à chaque utilisation
-    this.resetAutoLock();
-    
-    return {
-      privateKey: this.privateKey,
-      publicKey: this.publicKey
-    };
   }
 
-  // Vérifier si la session est déverrouillée
-  isUnlocked(): boolean {
-    return !!(this.privateKey && this.publicKey);
-  }
-
-  // Verrouiller manuellement
   lock(): void {
-    this.privateKey = null;
-    this.publicKey = null;
-    if (this.lockTimer) {
-      clearTimeout(this.lockTimer);
-      this.lockTimer = null;
-    }
+    this.sessionKeys = null;
+    console.log('🔒 Session locked');
   }
 
-  // Réinitialiser le timer d'auto-verrouillage
-  private resetAutoLock(): void {
-    if (this.lockTimer) {
-      clearTimeout(this.lockTimer);
-    }
-    
-    // Auto-verrouillage après 30 minutes
-    this.lockTimer = setTimeout(() => {
-      this.lock();
-    }, 30 * 60 * 1000);
+  isUnlocked(): boolean {
+    const unlocked = this.sessionKeys !== null;
+    console.log('🔍 Session unlock status:', unlocked);
+    return unlocked;
   }
 
-  // Nettoyer les ressources
-  destroy(): void {
-    this.lock();
-    this.keyManager.close();
+  getKeys(): { publicKey: string; privateKey: string } | null {
+    return this.sessionKeys;
   }
 }
+
+// ✅ CORRECTED EXPORTS
+export const keyManager = new NativeKeyManager();
+export const sessionManager = new NativeSessionManager(keyManager);
+export default keyManager;

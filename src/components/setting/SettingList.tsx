@@ -3,6 +3,9 @@ import { settingSections } from './setting-config'
 import { SettingViewType } from './SettingView'
 import SettingItem from './SettingItem'
 import UserInfoCard from '@/components/user/UserInfoCard'
+import { LogOut } from 'lucide-react';
+import * as authService from '@/services/auth.service';
+
 
 interface Props {
   selected: SettingViewType
@@ -43,6 +46,19 @@ export default function SettingList({ selected, onSelect }: Props) {
           </div>
         </div>
       ))}
+      <div className="mt-auto">
+        <div className="flex items-center justify-between px-4 py-4 cursor-pointer hover:bg-purple-500/10 transition-colors duration-200 rounded-lg"
+          onClick={() => {
+            authService.logout()
+            navigate('/login')
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <LogOut className="w-5 h-5 text-muted-foreground" />
+            <span className="text-sm text-foreground">Logout</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

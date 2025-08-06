@@ -1,6 +1,14 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import * as authService from '@/services/auth.service'
-import { User } from '@/services/auth.service'
+import messagingService from '@/services/messaging.service' 
+
+export interface User {
+  id: string
+  email: string
+  username: string
+  avatar?: string
+  isTwoFactorEnabled?: boolean
+}
 
 interface AuthContextProps {
   user: User | null
@@ -19,9 +27,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const token = localStorage.getItem('accessToken')
     if (token) {
-        authService
+      authService
         .validateToken(token)
-        .then(user => setUser(user)) // ou juste set isAuthenticated = true
+        .then(userData => {
+          setUser(userData)
+          // ✅ NOUVEAU : Synchroniser l'ID utilisateur avec le service de messagerie
+          messagingService.updateCurrentUserId(userData.id)
+        })
         .catch(() => localStorage.removeItem('accessToken'))
         .finally(() => setLoading(false))
     } else {
@@ -29,18 +41,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [])
 
-
   const login = async (emailOrUsername: string, password: string) => {
     const token = await authService.login({ emailOrUsername, password })
     if (token) {
-      const user = await authService.validateToken(token)
-      setUser(user)
+      const userData = await authService.validateToken(token)
+      setUser(userData)
+      
+      // ✅ NOUVEAU : Synchroniser l'ID utilisateur après login
+      messagingService.updateCurrentUserId(userData.id)
     }
   }
 
   const logout = () => {
     authService.logout()
     setUser(null)
+    
+    // ✅ NOUVEAU : Nettoyer le cache du service de messagerie
+    messagingService.clearCache()
   }
 
   return (

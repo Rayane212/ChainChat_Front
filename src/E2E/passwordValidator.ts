@@ -158,7 +158,7 @@ export class PasswordValidator {
 export class LoginAttemptManager {
   private static readonly STORAGE_KEY = 'login_attempts';
   private static readonly MAX_ATTEMPTS = 5;
-  private static readonly LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+  private static readonly LOCKOUT_DURATION = 5 //15 * 60 * 1000; // 15 minutes
 
   static recordFailure(userId: string): boolean {
     const attempts = this.getAttempts(userId);

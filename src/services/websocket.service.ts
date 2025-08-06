@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { encryptMessage, decryptMessage, deriveSharedSecret, decryptGroupSharedSecret } from '@/E2E/encryption';
-import { SodiumKeyManager, SessionManager } from '@/E2E/keyManager';
+import { NativeKeyManager } from '@/E2E/keyManager';
 
 export interface E2EEMessage {
   id: string;
@@ -18,21 +18,54 @@ export interface PublicKeyResponse {
   publicKey: string;
 }
 
+// ✅ NOUVEAU : SessionManager simple pour gérer les clés en session
+class SessionManager {
+  private sessionKeys: { publicKey: string; privateKey: string } | null = null;
+
+  async unlock(password: string, userId: string): Promise<void> {
+    const keyManager = new NativeKeyManager();
+    
+    try {
+      // Récupérer et déchiffrer les clés
+      const privateKey = await keyManager.getPrivateKey(password, userId);
+      const publicKey = await keyManager.getPublicKey(userId);
+      
+      this.sessionKeys = { publicKey, privateKey };
+    } catch (error) {
+      throw new Error('Invalid password or corrupted keys');
+    }
+  }
+
+  lock(): void {
+    this.sessionKeys = null;
+  }
+
+  isUnlocked(): boolean {
+    return this.sessionKeys !== null;
+  }
+
+  getKeys(): { publicKey: string; privateKey: string } | null {
+    return this.sessionKeys;
+  }
+}
+
 class WebSocketE2EEService {
   private socket: Socket | null = null;
   private sessionManager: SessionManager;
-  private keyManager: SodiumKeyManager;
+  private keyManager: NativeKeyManager;
   private messageHandlers: Array<(message: E2EEMessage) => void> = [];
   private connectionHandlers: Array<(connected: boolean) => void> = [];
   private publicKeyCache: Map<string, string> = new Map();
 
   constructor() {
     this.sessionManager = new SessionManager();
-    this.keyManager = new SodiumKeyManager();
+    this.keyManager = new NativeKeyManager();
   }
 
   async connect(wsUrl: string, token: string): Promise<void> {
     if (this.socket?.connected) return;
+
+    console.log(`🔗 Connecting to WebSocket at ${wsUrl} with token ${token}`);
 
     this.socket = io(wsUrl, {
       auth: { token },
@@ -116,7 +149,6 @@ class WebSocketE2EEService {
         conversationId,
         content: encryptedMessage.ciphertext,
         nonce: encryptedMessage.nonce,
-        // ✅ Pas de clé privée envoyée!
       };
 
       // 5. Envoyer via WebSocket
@@ -198,43 +230,79 @@ class WebSocketE2EEService {
     }
   }
 
+  // ✅ FIX : URLs avec variables d'environnement
   private async getPublicKey(userId: string): Promise<string> {
     // 1. Vérifier le cache
     if (this.publicKeyCache.has(userId)) {
       return this.publicKeyCache.get(userId)!;
     }
 
-    // 2. Demander au serveur (via API REST)
+    // 2. Demander au serveur via votre API Gateway
     try {
-      const response = await fetch(`/api/users/${userId}/public-key`, {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/users/${userId}/public-key`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
       });
       
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
-      const publicKey = data.data.publicKey;
+      const publicKey = data.data?.publicKey || data.publicKey;
       
       this.publicKeyCache.set(userId, publicKey);
       return publicKey;
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to get public key for user ${userId}: ${errorMessage}`);
+      console.warn(`⚠️ Could not get public key for user ${userId}: ${errorMessage}`);
+      
+      // ✅ FALLBACK : Demander via WebSocket si l'API REST échoue
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Timeout getting public key for user ${userId}`));
+        }, 5000);
+
+        const handler = (data: PublicKeyResponse) => {
+          if (data.userId === userId) {
+            clearTimeout(timeout);
+            this.publicKeyCache.set(userId, data.publicKey);
+            resolve(data.publicKey);
+          }
+        };
+
+        // Écouter temporairement
+        this.socket?.on('publicKey', handler);
+        
+        // Demander la clé via WebSocket
+        this.socket?.emit('requestPublicKey', { userId });
+        
+        setTimeout(() => {
+          this.socket?.off('publicKey', handler);
+        }, 5000);
+      });
     }
   }
 
+  // ✅ FIX : URL avec variables d'environnement  
   private async getGroupSharedSecret(conversationId: string, privateKey: string, publicKey: string): Promise<string> {
     try {
-      // Récupérer la clé de groupe chiffrée depuis l'API
-      const response = await fetch(`/api/groups/${conversationId}/shared-secret`, {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/messages/groups/${conversationId}/shared-secret`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
       });
       
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
-      const encryptedSharedSecret = data.data.encryptedSharedSecret;
+      const encryptedSharedSecret = data.data?.encryptedSharedSecret || data.encryptedSharedSecret;
       
       // Déchiffrer avec nos clés
       return await decryptGroupSharedSecret(encryptedSharedSecret, privateKey, publicKey);

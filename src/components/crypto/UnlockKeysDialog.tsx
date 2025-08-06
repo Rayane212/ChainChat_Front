@@ -1,4 +1,3 @@
-// src/components/crypto/UnlockKeysDialog.tsx
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -7,8 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent } from '@/components/ui/card';
 import { useE2EE } from '@/hooks/useE2EE';
-import { PasswordValidator, LoginAttemptManager } from '@/E2E/passwordValidator';
-import { Lock, Unlock, Key, Shield, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { PasswordValidator } from '@/E2E/passwordValidator';
+import { Lock, Unlock, Key, Shield, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UnlockKeysDialogProps {
@@ -18,24 +17,34 @@ interface UnlockKeysDialogProps {
 }
 
 export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: UnlockKeysDialogProps) {
-  const { initializeKeys, isInitializing, hasKeys } = useE2EE();
+  const { createKeys, unlockKeys, isInitializing, hasKeys, keysStatus } = useE2EE();
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [lockoutTime, setLockoutTime] = useState(0);
   const [validationResult, setValidationResult] = useState<any>(null);
 
+  const isCreatingKeys = keysStatus === 'none';
+  const isUnlockingKeys = keysStatus === 'exists';
+
+  // ✅ DÉSACTIVÉ TEMPORAIREMENT - Sera géré côté serveur
   // Vérifier le verrouillage au montage
   useEffect(() => {
-    const userId = 'current-user-id'; // À récupérer du contexte auth
-    const locked = LoginAttemptManager.isLockedOut(userId);
-    setIsLocked(locked);
+    // const userId = 'current-user-id'; // À récupérer du contexte auth
+    // const locked = LoginAttemptManager.isLockedOut(userId);
+    // setIsLocked(locked);
     
-    if (locked) {
-      const remaining = LoginAttemptManager.getRemainingLockoutTime(userId);
-      setLockoutTime(remaining);
-    }
+    // if (locked) {
+    //   const remaining = LoginAttemptManager.getRemainingLockoutTime(userId);
+    //   setLockoutTime(remaining);
+    // }
+    
+    // État temporaire - pas de verrouillage côté client
+    setIsLocked(false);
+    setLockoutTime(0);
   }, []);
 
   // Timer pour le décompte de verrouillage
@@ -56,18 +65,18 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
     }
   }, [lockoutTime]);
 
-  // Validation du mot de passe en temps réel
+  // Validation du mot de passe en temps réel (seulement pour la création)
   useEffect(() => {
-    if (password.length > 0) {
+    if (isCreatingKeys && password.length > 0) {
       const result = PasswordValidator.validatePassword(password);
       setValidationResult(result);
     } else {
       setValidationResult(null);
     }
-  }, [password]);
+  }, [password, isCreatingKeys]);
 
-  const handleUnlock = async () => {
-    const userId = 'current-user-id'; // À récupérer du contexte auth
+  const handleAction = async () => {
+    // const userId = 'current-user-id'; // À récupérer du contexte auth
 
     if (isLocked) {
       toast.error('Too many failed attempts. Please wait.');
@@ -79,31 +88,54 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
       return;
     }
 
-    try {
-      // Ajouter un délai client-side pour les tentatives répétées
-      await PasswordValidator.addClientSideDelay(attempts);
+    // Validation spécifique pour la création de clés
+    if (isCreatingKeys) {
+      if (password !== confirmPassword) {
+        toast.error('Passwords do not match');
+        return;
+      }
 
-      const success = await initializeKeys(password);
+      if (!validationResult?.isValid) {
+        toast.error('Password does not meet security requirements');
+        return;
+      }
+    }
+
+    try {
+      // ✅ DÉSACTIVÉ : Délai client-side supprimé (sera géré côté serveur)
+      // await PasswordValidator.addClientSideDelay(attempts);
+
+      let success = false;
+
+      if (isCreatingKeys) {
+        // 🔑 CRÉER des clés pour la première fois
+        success = await createKeys(password);
+      } else if (isUnlockingKeys) {
+        // 🔓 DÉVERROUILLER des clés existantes
+        success = await unlockKeys(password);
+      }
 
       if (success) {
         // Succès - réinitialiser les tentatives
-        LoginAttemptManager.recordSuccess(userId);
+        // ✅ DÉSACTIVÉ : LoginAttemptManager.recordSuccess(userId);
         setAttempts(0);
         setPassword('');
+        setConfirmPassword('');
         onSuccess?.();
         onOpenChange(false);
         
       } else {
-        // Échec - enregistrer la tentative
+        // Échec - incrémenter les tentatives locales (temporaire)
         const newAttempts = attempts + 1;
         setAttempts(newAttempts);
         
-        const locked = LoginAttemptManager.recordFailure(userId);
+        // ✅ DÉSACTIVÉ : Logique de verrouillage sera gérée côté serveur
+        // const locked = LoginAttemptManager.recordFailure(userId);
         
-        if (locked) {
+        // Simulation simple pour l'UI (temporaire)
+        if (newAttempts >= 5) {
           setIsLocked(true);
-          const remaining = LoginAttemptManager.getRemainingLockoutTime(userId);
-          setLockoutTime(remaining);
+          setLockoutTime(5 * 60 * 1000); // 5 minutes
           toast.error('Too many failed attempts. Account temporarily locked.');
         } else {
           toast.error(`Invalid password. ${5 - newAttempts} attempts remaining.`);
@@ -111,14 +143,14 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
       }
 
     } catch (error) {
-      console.error('Unlock error:', error);
-      toast.error('Failed to unlock keys');
+      console.error('Action error:', error);
+      toast.error(isCreatingKeys ? 'Failed to create keys' : 'Failed to unlock keys');
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isInitializing && !isLocked) {
-      handleUnlock();
+      handleAction();
     }
   };
 
@@ -128,15 +160,14 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const getPasswordStrengthColor = (score: number): string => {
-    switch (score) {
-      case 0: return 'bg-red-500';
-      case 1: return 'bg-orange-500';
-      case 2: return 'bg-yellow-500';
-      case 3: return 'bg-blue-500';
-      case 4: return 'bg-green-500';
-      default: return 'bg-gray-500';
+  const isFormValid = () => {
+    if (!password.trim()) return false;
+    
+    if (isCreatingKeys) {
+      return password === confirmPassword && validationResult?.isValid;
     }
+    
+    return true; // Pour le déverrouillage, juste le mot de passe suffit
   };
 
   return (
@@ -146,17 +177,22 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
           <div className="mx-auto mb-4 p-3 rounded-full bg-purple-500/20">
             {isLocked ? (
               <Lock className="w-8 h-8 text-red-400" />
+            ) : isCreatingKeys ? (
+              <Plus className="w-8 h-8 text-blue-400" />
             ) : (
               <Key className="w-8 h-8 text-purple-400" />
             )}
           </div>
           <DialogTitle className="text-xl text-foreground">
-            {hasKeys ? 'Unlock Your Keys' : 'Setup Encryption Keys'}
+            {isCreatingKeys 
+              ? 'Setup Encryption Keys' 
+              : 'Unlock Your Keys'
+            }
           </DialogTitle>
           <DialogDescription className="text-foreground-muted">
-            {hasKeys 
-              ? 'Enter your password to decrypt your messaging keys'
-              : 'Create a password to secure your end-to-end encryption keys'
+            {isCreatingKeys 
+              ? 'Create a password to secure your end-to-end encryption keys. This password encrypts your private keys locally.' 
+              : 'Enter your password to decrypt your messaging keys and start secure conversations.'
             }
           </DialogDescription>
         </DialogHeader>
@@ -176,7 +212,7 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
           {/* Champ mot de passe */}
           <div className="space-y-2">
             <Label htmlFor="password" className="text-foreground">
-              {hasKeys ? 'Password' : 'Create Password'}
+              {isCreatingKeys ? 'Create Password' : 'Password'}
             </Label>
             <div className="relative">
               <Input
@@ -185,7 +221,7 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={hasKeys ? 'Enter your password' : 'Create a strong password'}
+                placeholder={isCreatingKeys ? 'Create a strong password' : 'Enter your password'}
                 className="pr-10 bg-background/50 border-border focus:border-purple-500/50"
                 disabled={isInitializing || isLocked}
               />
@@ -204,36 +240,79 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
                 )}
               </Button>
             </div>
-
-            {/* Validation du mot de passe pour création */}
-            {!hasKeys && validationResult && (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Progress 
-                    value={(validationResult.score / 4) * 100} 
-                    className="flex-1 h-2"
-                  />
-                  <span className="text-xs text-foreground-muted">
-                    {validationResult.score}/4
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {validationResult.feedback.map((feedback: string, index: number) => (
-                    <div key={index} className="flex items-center space-x-2 text-xs">
-                      {validationResult.isValid ? (
-                        <CheckCircle className="w-3 h-3 text-green-400" />
-                      ) : (
-                        <AlertTriangle className="w-3 h-3 text-yellow-400" />
-                      )}
-                      <span className={validationResult.isValid ? 'text-green-400' : 'text-yellow-400'}>
-                        {feedback}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Confirmation de mot de passe (seulement pour création) */}
+          {isCreatingKeys && (
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword" className="text-foreground">
+                Confirm Password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Confirm your password"
+                  className="pr-10 bg-background/50 border-border focus:border-purple-500/50"
+                  disabled={isInitializing || isLocked}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 h-auto"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  disabled={isInitializing || isLocked}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-4 h-4 text-foreground-muted" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-foreground-muted" />
+                  )}
+                </Button>
+              </div>
+
+              {/* Vérification des mots de passe */}
+              {password !== confirmPassword && confirmPassword.length > 0 && (
+                <p className="text-sm text-red-400 flex items-center space-x-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>Passwords do not match</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Validation du mot de passe pour création */}
+          {isCreatingKeys && validationResult && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Progress 
+                  value={(validationResult.score / 5) * 100} 
+                  className="flex-1 h-2"
+                />
+                <span className="text-xs text-foreground-muted">
+                  {validationResult.score}/5
+                </span>
+              </div>
+              <div className="space-y-1">
+                {validationResult.feedback.map((feedback: string, index: number) => (
+                  <div key={index} className="flex items-center space-x-2 text-xs">
+                    {validationResult.isValid ? (
+                      <CheckCircle className="w-3 h-3 text-green-400" />
+                    ) : (
+                      <AlertTriangle className="w-3 h-3 text-yellow-400" />
+                    )}
+                    <span className={validationResult.isValid ? 'text-green-400' : 'text-yellow-400'}>
+                      {feedback}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Message de verrouillage */}
           {isLocked && (
@@ -243,15 +322,15 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
                 <div>
                   <p className="text-sm font-medium text-red-400">Account Temporarily Locked</p>
                   <p className="text-xs text-red-300/80">
-                    Too many failed attempts. Try again in {formatLockoutTime(lockoutTime)}
+                    Try again in {formatLockoutTime(lockoutTime)}
                   </p>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Tentatives restantes */}
-          {attempts > 0 && !isLocked && (
+          {/* Tentatives restantes (seulement pour déverrouillage) */}
+          {isUnlockingKeys && attempts > 0 && !isLocked && (
             <Card className="bg-yellow-500/10 border-yellow-500/20">
               <CardContent className="flex items-center space-x-3 p-4">
                 <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -278,37 +357,43 @@ export default function UnlockKeysDialog({ open, onOpenChange, onSuccess }: Unlo
               Cancel
             </Button>
             <Button
-              onClick={handleUnlock}
-              disabled={
-                isInitializing || 
-                isLocked || 
-                !password.trim() || 
-                (!hasKeys && (!validationResult?.isValid))
-              }
+              onClick={handleAction}
+              disabled={isInitializing || isLocked || !isFormValid()}
               className="flex-1 bg-purple-500 hover:bg-purple-600 text-white"
             >
               {isInitializing ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {hasKeys ? 'Unlocking...' : 'Setting up...'}
+                  {isCreatingKeys ? 'Creating...' : 'Unlocking...'}
                 </>
               ) : (
                 <>
-                  <Unlock className="w-4 h-4 mr-2" />
-                  {hasKeys ? 'Unlock' : 'Setup Keys'}
+                  {isCreatingKeys ? (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Keys
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-4 h-4 mr-2" />
+                      Unlock
+                    </>
+                  )}
                 </>
               )}
             </Button>
           </div>
 
           {/* Information de sécurité */}
-          <div className="text-center text-xs text-foreground-muted">
-            <p>Your password is used to encrypt your private keys locally.</p>
+          <div className="text-center text-xs text-foreground-muted space-y-1">
+            <p>Your password encrypts your private keys locally.</p>
             <p>It never leaves your device and cannot be recovered if lost.</p>
+            {isCreatingKeys && (
+              <p className="text-yellow-400">⚠️ Store this password safely - you cannot reset it!</p>
+            )}
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useChat } from '@/context/ChatProvider'
 import MessageHeader from './MessageHeader'
@@ -10,6 +11,14 @@ export default function ChatView() {
 
   const conversationId = paramId || selectedChatId
 
+  // ✅ SOLUTION : Utiliser useEffect pour les side effects
+  useEffect(() => {
+    // Enregistrer le chat dans le contexte si on accède via URL directement
+    if (paramId && !selectedChatId) {
+      selectChat(paramId)
+    }
+  }, [paramId, selectedChatId, selectChat])
+
   // Si aucun chat sélectionné ou dans l'URL
   if (!conversationId) {
     return (
@@ -17,11 +26,6 @@ export default function ChatView() {
         Select a conversation
       </div>
     )
-  }
-
-  // Enregistrer le chat dans le contexte si on accède via URL directement
-  if (!selectedChatId && paramId) {
-    selectChat(paramId)
   }
 
   return (
